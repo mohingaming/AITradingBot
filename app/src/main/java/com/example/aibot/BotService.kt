@@ -44,6 +44,7 @@ class BotService : Service() {
     private var overlaySignal: TextView? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var apiKey = ""
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         apiKey = getSharedPreferences("bot", Context.MODE_PRIVATE)
@@ -75,7 +76,7 @@ class BotService : Service() {
 
         imageReader = ImageReader.newInstance(
             metrics.widthPixels, metrics.heightPixels,
-            PixelFormat.RGBA_8888, 2)
+            PixelFormat.RGBA_8888, 3)
 
         virtualDisplay = mediaProjection?.createVirtualDisplay(
             "bot", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi,
@@ -83,24 +84,38 @@ class BotService : Service() {
             imageReader!!.surface, null, null)
     }
 
-    private fun capture(): Bitmap? {
+    private fun captureOnce(): Bitmap? {
         val img = imageReader?.acquireLatestImage() ?: return null
-        val plane = img.planes[0]
-        val buffer = plane.buffer
-        val pixelStride = plane.pixelStride
-        val rowStride = plane.rowStride
-        val rowPadding = rowStride - pixelStride * img.width
-        val bmp = Bitmap.createBitmap(
-            img.width + rowPadding / pixelStride, img.height, Bitmap.Config.ARGB_8888)
-        bmp.copyPixelsFromBuffer(buffer)
-        img.close()
-        return Bitmap.createBitmap(bmp, 0, 0, img.width, img.height)
+        return try {
+            val plane = img.planes[0]
+            val buffer = plane.buffer
+            val pixelStride = plane.pixelStride
+            val rowStride = plane.rowStride
+            val rowPadding = rowStride - pixelStride * img.width
+            val bmp = Bitmap.createBitmap(
+                img.width + rowPadding / pixelStride, img.height, Bitmap.Config.ARGB_8888)
+            bmp.copyPixelsFromBuffer(buffer)
+            Bitmap.createBitmap(bmp, 0, 0, img.width, img.height)
+        } catch (e: Exception) {
+            null
+        } finally {
+            try { img.close() } catch (_: Exception) {}
+        }
+    }
+
+    private fun capture(): Bitmap? {
+        repeat(3) {
+            val bmp = captureOnce()
+            if (bmp != null) return bmp
+            Thread.sleep(200)
+        }
+        return null
     }
 
     private fun startLoop() = scope.launch {
         while (isActive) {
             val visible = AppDetectorService.tradingBoxVisible
-            Handler(Looper.getMainLooper()).post {
+            mainHandler.post {
                 overlayStatus?.text = if (visible) "Trading box dekhte pachhi"
                                       else "Kichu dekhte pachhi na"
                 overlayStatus?.setTextColor(
@@ -109,14 +124,20 @@ class BotService : Service() {
 
             if (visible && apiKey.isNotEmpty()) {
                 try {
-                    val bmp = capture() ?: continue
-                    val chartData = ChartAnalyzer.analyze(bmp)
-                    val result = MercuryClient.analyze(apiKey, chartData)
-                    Handler(Looper.getMainLooper()).post {
-                        overlaySignal?.text = "Signal: $result"
+                    val bmp = capture()
+                    if (bmp == null) {
+                        mainHandler.post {
+                            overlaySignal?.text = "Signal: frame miss, retry hocche..."
+                        }
+                    } else {
+                        val chartData = ChartAnalyzer.analyze(bmp)
+                        val result = MercuryClient.analyze(apiKey, chartData)
+                        mainHandler.post {
+                            overlaySignal?.text = "Signal: $result"
+                        }
                     }
                 } catch (e: Exception) {
-                    Handler(Looper.getMainLooper()).post {
+                    mainHandler.post {
                         overlaySignal?.text = "Error: ${e.message}"
                     }
                 }
