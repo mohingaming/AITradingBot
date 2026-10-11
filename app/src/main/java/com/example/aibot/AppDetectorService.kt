@@ -1,6 +1,8 @@
 package com.example.aibot
 
 import android.accessibilityservice.AccessibilityService
+import android.annotation.SuppressLint
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.os.Build
@@ -26,6 +28,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.Locale
 
+@SuppressLint("NewApi")
 class AppDetectorService : AccessibilityService() {
 
     companion object {
