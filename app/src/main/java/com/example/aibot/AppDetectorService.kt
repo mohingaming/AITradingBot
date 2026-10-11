@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
+import android.media.AudioAttributes
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -40,17 +41,30 @@ class AppDetectorService : AccessibilityService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mainHandler = Handler(Looper.getMainLooper())
     private var overlayView: View? = null
-    private var overlayStatus: TextView? = null
+    private var overlayDot: TextView? = null
     private var overlaySignal: TextView? = null
     private var tts: TextToSpeech? = null
+    private var ttsReady = false
+    private var pendingSpeech: String? = null
     private var lastSignal = ""
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         tts = TextToSpeech(this) { status ->
-            if (status == TextToSpeech.SUCCESS) tts?.language = Locale.ENGLISH
+            if (status == TextToSpeech.SUCCESS) {
+                tts?.language = Locale.ENGLISH
+                tts?.setSpeechRate(0.95f)
+                tts?.setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build())
+                ttsReady = true
+                pendingSpeech?.let { say(it); pendingSpeech = null }
+            } else {
+                showSignal("Voice engine nai! Google TTS install koro")
+            }
         }
-        showOverlay()
         startLoop()
     }
 
@@ -76,13 +90,20 @@ class AppDetectorService : AccessibilityService() {
             val apiKey = prefs.getString("api_key", "") ?: ""
 
             mainHandler.post {
-                overlayStatus?.text = when {
-                    !enabled -> "Bot OFF (app theke ON koro)"
-                    tradingBoxVisible -> "Trading box dekhte pachhi"
-                    else -> "Kichu dekhte pachhi na"
+                if (!enabled) {
+                    overlayView?.let {
+                        (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(it)
+                        overlayView = null
+                        overlayDot = null
+                        overlaySignal = null
+                    }
+                } else {
+                    if (overlayView == null) showOverlay()
+                    overlayDot?.setTextColor(
+                        if (tradingBoxVisible) 0xFF00E676.toInt() else 0xFFFF5255.toInt())
+                    overlaySignal?.visibility =
+                        if (tradingBoxVisible) View.VISIBLE else View.GONE
                 }
-                overlayStatus?.setTextColor(
-                    if (tradingBoxVisible && enabled) 0xFF4CAF50.toInt() else 0xFFFF5555.toInt())
             }
 
             if (enabled && tradingBoxVisible && apiKey.isNotEmpty()) {
@@ -127,7 +148,7 @@ class AppDetectorService : AccessibilityService() {
             overlaySignal?.text = "Signal: $text"
             overlaySignal?.setTextColor(
                 when {
-                    text.contains("UP", true) && !text.contains("DOWN", true) -> 0xFF4CAF50.toInt()
+                    text.contains("UP", true) && !text.contains("DOWN", true) -> 0xFF00E676.toInt()
                     text.contains("DOWN", true) -> 0xFFFF5252.toInt()
                     else -> 0xFFFFFFFF.toInt()
                 })
@@ -142,8 +163,13 @@ class AppDetectorService : AccessibilityService() {
             text.contains("UP", true) -> "UP"
             else -> "WAIT"
         }
+        if (!ttsReady) { pendingSpeech = "Signal $signal"; return }
+        say("Signal $signal")
+    }
+
+    private fun say(text: String) {
         mainHandler.post {
-            tts?.speak("Signal $signal", TextToSpeech.QUEUE_FLUSH, null, "sig")
+            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "sig${System.currentTimeMillis()}")
         }
     }
 
@@ -161,9 +187,8 @@ class AppDetectorService : AccessibilityService() {
             PixelFormat.TRANSLUCENT).apply { x = 0; y = -300 }
 
         overlayView = LayoutInflater.from(this).inflate(R.layout.widget_view, null)
-        overlayStatus = overlayView?.findViewById(R.id.widgetStatus)
+        overlayDot = overlayView?.findViewById(R.id.widgetDot)
         overlaySignal = overlayView?.findViewById(R.id.widgetSignal)
-        overlayView?.findViewById<View>(R.id.btnStop)?.visibility = View.GONE
 
         overlayView?.setOnTouchListener(object : View.OnTouchListener {
             var dx = 0f; var dy = 0f; var sx = 0; var sy = 0
