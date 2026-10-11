@@ -19,6 +19,13 @@
         android:layout_height="wrap_content"
         android:text="Save API Key"/>
 
+    <ToggleButton
+        android:id="@+id/botToggle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textOn="BOT ON"
+        android:textOff="BOT OFF"/>
+
     <Button
         android:id="@+id/btnOverlay"
         android:layout_width="match_parent"
@@ -31,16 +38,10 @@
         android:layout_height="wrap_content"
         android:text="2. Enable Accessibility Service"/>
 
-    <Button
-        android:id="@+id/btnStart"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="3. START AI BOT"/>
-
     <TextView
         android:id="@+id/statusText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="16dp"
-        android:text="Bot off"/>
+        android:text="Setup koro"/>
 </LinearLayout>
