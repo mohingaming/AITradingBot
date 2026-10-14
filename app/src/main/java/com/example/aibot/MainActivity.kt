@@ -7,10 +7,9 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Button
-import android.widget.CompoundButton
 import android.widget.EditText
 import android.widget.TextView
-import android.widget.ToggleButton
+import android.widget.Toast
 
 class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -20,18 +19,29 @@ class MainActivity : Activity() {
         val prefs = getSharedPreferences("bot", Context.MODE_PRIVATE)
         val input = findViewById<EditText>(R.id.apiKeyInput)
         val status = findViewById<TextView>(R.id.statusText)
-        val toggle = findViewById<ToggleButton>(R.id.botToggle)
         input.setText(prefs.getString("api_key", ""))
-        toggle.isChecked = prefs.getBoolean("bot_on", true)
 
         findViewById<Button>(R.id.btnSave).setOnClickListener {
             prefs.edit().putString("api_key", input.text.toString().trim()).apply()
             status.text = "API key saved"
         }
 
-        toggle.setOnCheckedChangeListener { _: CompoundButton, isChecked: Boolean ->
-            prefs.edit().putBoolean("bot_on", isChecked).apply()
-            status.text = if (isChecked) "Bot ON" else "Bot OFF"
+        findViewById<TextView>(R.id.tileAuto).setOnClickListener {
+            val nowOn = !prefs.getBoolean("bot_on", true)
+            prefs.edit().putBoolean("bot_on", nowOn).apply()
+            status.text = if (nowOn) "Bot ON — trading chart kholo" else "Bot OFF"
+        }
+
+        findViewById<TextView>(R.id.tileScreenshot).setOnClickListener {
+            Toast.makeText(this, "Screenshot analysis: OCR mode e cholbe", Toast.LENGTH_SHORT).show()
+        }
+
+        findViewById<TextView>(R.id.tileFuture).setOnClickListener {
+            Toast.makeText(this, "Future signal: same AI engine", Toast.LENGTH_SHORT).show()
+        }
+
+        findViewById<TextView>(R.id.tileCourse).setOnClickListener {
+            Toast.makeText(this, "Trading course: Coming soon!", Toast.LENGTH_SHORT).show()
         }
 
         findViewById<Button>(R.id.btnOverlay).setOnClickListener {
