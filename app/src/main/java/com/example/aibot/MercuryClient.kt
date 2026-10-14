@@ -12,7 +12,7 @@ object MercuryClient {
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
         .build()
 
     fun analyze(apiKey: String, marketData: String): String {
@@ -27,8 +27,9 @@ Reply ONLY valid JSON, nothing else:
                 put("role", "user")
                 put("content", prompt)
             }))
+            put("reasoning_effort", "medium")
+            put("max_completion_tokens", 2048)
             put("temperature", 0.3)
-            put("max_completion_tokens", 300)
         }
 
         val req = Request.Builder()
@@ -39,13 +40,21 @@ Reply ONLY valid JSON, nothing else:
             .build()
 
         client.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) return "API error ${resp.code}"
-            val json = JSONObject(resp.body!!.string())
-            return json.getJSONArray("choices")
-                .getJSONObject(0)
-                .getJSONObject("message")
-                .getString("content")
-                .trim()
+            val body = resp.body!!.string()
+            if (!resp.isSuccessful) return "API error ${resp.code}: ${body.take(150)}"
+            return try {
+                val msg = JSONObject(body)
+                    .getJSONArray("choices")
+                    .getJSONObject(0)
+                    .getJSONObject("message")
+                if (msg.isNull("content")) {
+                    "Empty reply: ${body.take(200)}"
+                } else {
+                    msg.getString("content").trim()
+                }
+            } catch (e: Exception) {
+                "Parse error: ${body.take(200)}"
+            }
         }
     }
 }
