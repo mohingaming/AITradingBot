@@ -41,18 +41,26 @@ class AppDetectorService : AccessibilityService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mainHandler = Handler(Looper.getMainLooper())
     private var overlayView: View? = null
-    private var overlayDot: TextView? = null
+    private var overlayStatus: TextView? = null
+    private var overlayTimer: TextView? = null
     private var overlaySignal: TextView? = null
     private var tts: TextToSpeech? = null
     private var ttsReady = false
-    private var pendingSpeech: String? = null
+    private var bangla = false
+    private var wasVisible = false
     private var lastSignal = ""
+    private var seconds = 0
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         tts = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
-                tts?.language = Locale.ENGLISH
+                val bn = Locale("bn", "BD")
+                val ok = tts?.isLanguageAvailable(bn)
+                bangla = ok == TextToSpeech.LANG_AVAILABLE ||
+                         ok == TextToSpeech.LANG_COUNTRY_AVAILABLE ||
+                         ok == TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE
+                tts?.language = if (bangla) bn else Locale.ENGLISH
                 tts?.setSpeechRate(0.95f)
                 tts?.setAudioAttributes(
                     AudioAttributes.Builder()
@@ -60,11 +68,11 @@ class AppDetectorService : AccessibilityService() {
                         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                         .build())
                 ttsReady = true
-                pendingSpeech?.let { say(it); pendingSpeech = null }
             } else {
-                showSignal("Voice engine nai! Google TTS install koro")
+                showSignal("Voice engine nai!")
             }
         }
+        startTicker()
         startLoop()
     }
 
@@ -83,29 +91,46 @@ class AppDetectorService : AccessibilityService() {
         return false
     }
 
-    private fun startLoop() = scope.launch {
+    private fun startTicker() = scope.launch {
         while (isActive) {
             val prefs = getSharedPreferences("bot", MODE_PRIVATE)
             val enabled = prefs.getBoolean("bot_on", true)
-            val apiKey = prefs.getString("api_key", "") ?: ""
 
             mainHandler.post {
                 if (!enabled) {
-                    overlayView?.let {
-                        (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(it)
-                        overlayView = null
-                        overlayDot = null
-                        overlaySignal = null
-                    }
+                    removeOverlay()
                 } else {
                     if (overlayView == null) showOverlay()
-                    overlayDot?.setTextColor(
-                        if (tradingBoxVisible) 0xFF00E676.toInt() else 0xFFFF5255.toInt())
+                    seconds++
+                    overlayStatus?.text = if (tradingBoxVisible) "AI ACTIVE" else "AI SEARCHING"
+                    overlayStatus?.setTextColor(
+                        if (tradingBoxVisible) 0xFF00E676.toInt() else 0xFFFFB300.toInt())
+                    overlayTimer?.text = String.format("%02d:%02d", seconds / 60, seconds % 60)
                     overlaySignal?.visibility =
                         if (tradingBoxVisible) View.VISIBLE else View.GONE
                 }
             }
 
+            if (enabled && ttsReady) {
+                if (tradingBoxVisible && !wasVisible) {
+                    wasVisible = true
+                    say(if (bangla) "হ্যাঁ, আমি ট্রেডিং চার্ট দেখতে পাচ্ছি এবং বিশ্লেষণ করছি। অনুগ্রহ করে অপেক্ষা করুন।"
+                        else "Yes, I can see the trading chart and I am analyzing it. Please wait.")
+                } else if (!tradingBoxVisible && wasVisible) {
+                    wasVisible = false
+                    say(if (bangla) "আমি কোনো ট্রেডিং চার্ট দেখতে পাচ্ছি না। অনুগ্রহ করে একটি ট্রেডিং চার্ট খুলুন।"
+                        else "I cannot see any trading chart. Please open a trading chart.")
+                }
+            }
+            delay(1000)
+        }
+    }
+
+    private fun startLoop() = scope.launch {
+        while (isActive) {
+            val prefs = getSharedPreferences("bot", MODE_PRIVATE)
+            val enabled = prefs.getBoolean("bot_on", true)
+            val apiKey = prefs.getString("api_key", "") ?: ""
             if (enabled && tradingBoxVisible && apiKey.isNotEmpty()) {
                 takeShot(apiKey)
             }
@@ -131,7 +156,7 @@ class AppDetectorService : AccessibilityService() {
                             val data = ChartAnalyzer.analyze(sw)
                             val result = MercuryClient.analyze(apiKey, data)
                             showSignal(result)
-                            speak(result)
+                            speakSignal(result)
                         } catch (e: Exception) {
                             showSignal("Error: ${e.message}")
                         }
@@ -145,31 +170,48 @@ class AppDetectorService : AccessibilityService() {
 
     private fun showSignal(text: String) {
         mainHandler.post {
-            overlaySignal?.text = "Signal: $text"
-            overlaySignal?.setTextColor(
-                when {
-                    text.contains("UP", true) && !text.contains("DOWN", true) -> 0xFF00E676.toInt()
-                    text.contains("DOWN", true) -> 0xFFFF5252.toInt()
-                    else -> 0xFFFFFFFF.toInt()
-                })
+            overlaySignal?.text = signalText(text)
+            overlaySignal?.setTextColor(signalColor(text))
         }
     }
 
-    private fun speak(text: String) {
+    private fun signalText(text: String): String = when {
+        text.contains("DOWN", true) -> "SELL SIGNAL"
+        text.contains("UP", true) -> "BUY SIGNAL"
+        text.contains("ERROR") || text.contains("error") -> text
+        else -> "ANALYZING..."
+    }
+
+    private fun signalColor(text: String): Int = when {
+        text.contains("DOWN", true) -> 0xFFFF5252.toInt()
+        text.contains("UP", true) -> 0xFF00E676.toInt()
+        else -> 0xFFFFFFFF.toInt()
+    }
+
+    private fun speakSignal(text: String) {
         if (text == lastSignal) return
         lastSignal = text
-        val signal = when {
-            text.contains("DOWN", true) -> "DOWN"
-            text.contains("UP", true) -> "UP"
-            else -> "WAIT"
+        when {
+            text.contains("DOWN", true) ->
+                say(if (bangla) "সেল সিগন্যাল" else "Signal SELL")
+            text.contains("UP", true) ->
+                say(if (bangla) "বাই সিগন্যাল" else "Signal BUY")
         }
-        if (!ttsReady) { pendingSpeech = "Signal $signal"; return }
-        say("Signal $signal")
     }
 
     private fun say(text: String) {
         mainHandler.post {
-            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "sig${System.currentTimeMillis()}")
+            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "v${System.currentTimeMillis()}")
+        }
+    }
+
+    private fun removeOverlay() {
+        overlayView?.let {
+            (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(it)
+            overlayView = null
+            overlayStatus = null
+            overlayTimer = null
+            overlaySignal = null
         }
     }
 
@@ -187,8 +229,13 @@ class AppDetectorService : AccessibilityService() {
             PixelFormat.TRANSLUCENT).apply { x = 0; y = -300 }
 
         overlayView = LayoutInflater.from(this).inflate(R.layout.widget_view, null)
-        overlayDot = overlayView?.findViewById(R.id.widgetDot)
+        overlayStatus = overlayView?.findViewById(R.id.widgetStatus)
+        overlayTimer = overlayView?.findViewById(R.id.widgetTimer)
         overlaySignal = overlayView?.findViewById(R.id.widgetSignal)
+        overlayView?.findViewById<TextView>(R.id.widgetClose)?.setOnClickListener {
+            getSharedPreferences("bot", MODE_PRIVATE).edit()
+                .putBoolean("bot_on", false).apply()
+        }
 
         overlayView?.setOnTouchListener(object : View.OnTouchListener {
             var dx = 0f; var dy = 0f; var sx = 0; var sy = 0
@@ -215,9 +262,7 @@ class AppDetectorService : AccessibilityService() {
         scope.cancel()
         tts?.stop()
         tts?.shutdown()
-        overlayView?.let {
-            (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(it)
-        }
+        removeOverlay()
         super.onDestroy()
     }
 }
