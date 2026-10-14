@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
+import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
@@ -26,21 +27,21 @@ class MainActivity : Activity() {
             status.text = "API key saved"
         }
 
-        findViewById<TextView>(R.id.tileAuto).setOnClickListener {
+        findViewById<View>(R.id.tileAuto).setOnClickListener {
             val nowOn = !prefs.getBoolean("bot_on", true)
             prefs.edit().putBoolean("bot_on", nowOn).apply()
             status.text = if (nowOn) "Bot ON — trading chart kholo" else "Bot OFF"
         }
 
-        findViewById<TextView>(R.id.tileScreenshot).setOnClickListener {
+        findViewById<View>(R.id.tileScreenshot).setOnClickListener {
             Toast.makeText(this, "Screenshot analysis: OCR mode e cholbe", Toast.LENGTH_SHORT).show()
         }
 
-        findViewById<TextView>(R.id.tileFuture).setOnClickListener {
+        findViewById<View>(R.id.tileFuture).setOnClickListener {
             Toast.makeText(this, "Future signal: same AI engine", Toast.LENGTH_SHORT).show()
         }
 
-        findViewById<TextView>(R.id.tileCourse).setOnClickListener {
+        findViewById<View>(R.id.tileCourse).setOnClickListener {
             Toast.makeText(this, "Trading course: Coming soon!", Toast.LENGTH_SHORT).show()
         }
 
