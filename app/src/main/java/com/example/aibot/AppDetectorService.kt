@@ -176,15 +176,14 @@ class AppDetectorService : AccessibilityService() {
     }
 
     private fun signalText(text: String): String = when {
-        text.contains("DOWN", true) -> "SELL SIGNAL"
-        text.contains("UP", true) -> "BUY SIGNAL"
-        text.contains("ERROR") || text.contains("error") -> text
-        else -> "ANALYZING..."
+        text.contains("DOWN", true) && !text.contains("UP", true) -> "SELL SIGNAL"
+        text.contains("UP", true) && text.contains("signal", true) -> "BUY SIGNAL"
+        else -> text.take(60)
     }
 
     private fun signalColor(text: String): Int = when {
         text.contains("DOWN", true) -> 0xFFFF5252.toInt()
-        text.contains("UP", true) -> 0xFF00E676.toInt()
+        text.contains("UP", true) && text.contains("signal", true) -> 0xFF00E676.toInt()
         else -> 0xFFFFFFFF.toInt()
     }
 
@@ -192,7 +191,7 @@ class AppDetectorService : AccessibilityService() {
         if (text == lastSignal) return
         lastSignal = text
         when {
-            text.contains("DOWN", true) ->
+            text.contains("DOWN", true) && !text.contains("UP", true) ->
                 say(if (bangla) "সেল সিগন্যাল" else "Signal SELL")
             text.contains("UP", true) ->
                 say(if (bangla) "বাই সিগন্যাল" else "Signal BUY")
