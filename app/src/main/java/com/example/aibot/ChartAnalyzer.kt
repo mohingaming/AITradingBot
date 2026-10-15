@@ -42,19 +42,22 @@ object ChartAnalyzer {
         lastPrice = smoothed
 
         history.addLast(smoothed)
-        if (history.size > 10) history.removeFirst()
+        if (history.size > 6) history.removeFirst()
 
-        val change = if (history.size >= 2)
+        val overall = if (history.size >= 2)
             ((smoothed - history.first()) / history.first()) * 100.0 else 0.0
+
+        val list = history.toList()
+        val lastMove = if (list.size >= 2)
+            ((list.last() - list[list.size - 2]) / list[list.size - 2]) * 100.0 else 0.0
 
         val durationSec = detectDuration(fullBitmap)
 
         return """Live price: $smoothed
-Recent price trend: ${"%.4f".format(change)} percent (${if (change >= 0) "RISING" else "FALLING"})
-Visible range: ${prices.first()} to ${prices.last()}
+Overall trend: ${"%.4f".format(overall)} percent
+Latest move (last scan): ${"%.4f".format(lastMove)} percent (${if (lastMove >= 0) "RISING" else "FALLING"})
 Selected trade duration: $durationSec seconds
-Samples: ${history.size}
-Rule: trade duration is $durationSec seconds. For very short durations (under 60s), weight the most recent momentum heavily. If trend is clearly positive, signal UP. If clearly negative, signal DOWN. If near zero, WAIT."""
+Rule: Answer WAIT only if the latest move is between -0.003 and +0.003 percent. Otherwise signal must follow the latest move direction (positive = UP, negative = DOWN). Duration ${durationSec}s."""
     }
 
     private suspend fun detectDuration(bitmap: Bitmap): Int {
