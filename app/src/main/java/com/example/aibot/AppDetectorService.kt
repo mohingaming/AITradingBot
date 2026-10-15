@@ -28,6 +28,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.min
 
 @SuppressLint("NewApi")
 class AppDetectorService : AccessibilityService() {
@@ -49,6 +51,8 @@ class AppDetectorService : AccessibilityService() {
     private var bangla = false
     private var wasVisible = false
     private var seconds = 0
+    private var lastClock = ""
+    private var lastRound = -1
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -101,10 +105,13 @@ class AppDetectorService : AccessibilityService() {
                 } else {
                     if (overlayView == null) showOverlay()
                     seconds++
-                    overlayStatus?.text = if (tradingBoxVisible) "AI ACTIVE" else "AI SEARCHING"
+                    val roundText = if (lastRound in 0..59) " • ${lastRound}s" else ""
+                    overlayStatus?.text =
+                        (if (tradingBoxVisible) "AI ACTIVE" else "AI SEARCHING") + roundText
                     overlayStatus?.setTextColor(
                         if (tradingBoxVisible) 0xFF00E676.toInt() else 0xFFFFB300.toInt())
-                    overlayTimer?.text = String.format("%02d:%02d", seconds / 60, seconds % 60)
+                    overlayTimer?.text = if (lastClock.isNotEmpty()) lastClock
+                        else String.format("%02d:%02d", seconds / 60, seconds % 60)
                     overlaySignal?.visibility =
                         if (tradingBoxVisible) View.VISIBLE else View.GONE
                 }
@@ -132,11 +139,14 @@ class AppDetectorService : AccessibilityService() {
             if (enabled && tradingBoxVisible) {
                 takeShot()
             }
-            delay(20000)
+            delay(15000)
         }
     }
 
-    // LOCAL BRAIN — API লাগে না, rate limit নেই
+    private fun num(data: String, key: String): Double {
+        return Regex("""$key=(-?\d+\.?\d*)""").find(data)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
+    }
+
     private fun takeShot() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             showSignal("Android 11+ lagbe")
@@ -153,20 +163,30 @@ class AppDetectorService : AccessibilityService() {
                     scope.launch {
                         try {
                             val data = ChartAnalyzer.analyze(sw)
-                            val move = Regex("""Latest move \(last scan\): (-?\d+\.\d+)""")
-                                .find(data)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
-                            val overall = Regex("""Overall trend: (-?\d+\.\d+)""")
-                                .find(data)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
+                            if (data == "ERROR") { showSignal("Chart pora jayni"); return@launch }
+
+                            val move = num(data, "MOVE")
+                            val overall = num(data, "OVERALL")
+                            lastRound = num(data, "ROUND").toInt()
+                            lastClock = Regex("""CLOCK=([0-9:]*)""").find(data)?.groupValues?.get(1) ?: lastClock
+
+                            val newRound = data.contains("NEWROUND=true")
+
+                            // সিগন্যাল: গতির দিক
                             val score = move * 0.7 + overall * 0.3
-                            val result = when {
-                                score > 0.002 ->
-                                    """{"signal":"UP","confidence":85,"reason":"rising"}"""
-                                score < -0.002 ->
-                                    """{"signal":"DOWN","confidence":85,"reason":"falling"}"""
-                                else ->
-                                    """{"signal":"WAIT","confidence":50,"reason":"flat"}"""
+                            val sig = when {
+                                score > 0.002 -> "UP"
+                                score < -0.002 -> "DOWN"
+                                else -> "WAIT"
                             }
+                            val conf = (70 + min(25.0, abs(score) * 3000)).toInt()
+                            val result = """{"signal":"$sig","confidence":$conf,"reason":"momentum"}"""
                             showSignal(result)
+
+                            if (newRound) {
+                                say(if (bangla) "নতুন রাউন্ড শুরু হয়েছে" else "New round started")
+                                delay(2200)
+                            }
                             speakSignal(result)
                         } catch (e: Exception) {
                             showSignal("Error: ${e.message}")
@@ -213,7 +233,7 @@ class AppDetectorService : AccessibilityService() {
         when (extract(text, "signal")) {
             "UP" -> say(if (bangla) "বাই সিগন্যাল" else "Signal BUY")
             "DOWN" -> say(if (bangla) "সেল সিগন্যাল" else "Signal SELL")
-            "WAIT" -> say(if (bangla) "অপেক্ষা করুন, কোনো দিক নেই" else "Wait, no clear trend")
+            "WAIT" -> say(if (bangla) "অপেক্ষা করুন" else "Wait")
         }
     }
 
