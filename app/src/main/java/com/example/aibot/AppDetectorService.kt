@@ -178,33 +178,42 @@ class AppDetectorService : AccessibilityService() {
             })
     }
 
+    // JSON থেকে signal আর confidence বের করে
+    private fun extract(text: String, key: String): String {
+        val m = Regex("""\"$key\"\s*:\s*\"?(UP|DOWN|WAIT|\d+)\"?""").find(text)
+        return m?.groupValues?.get(1) ?: ""
+    }
+
     private fun showSignal(text: String) {
+        val sig = extract(text, "signal")
+        val conf = extract(text, "confidence")
         mainHandler.post {
-            overlaySignal?.text = signalText(text)
-            overlaySignal?.setTextColor(signalColor(text))
+            when (sig) {
+                "UP" -> {
+                    overlaySignal?.text = if (conf.isNotEmpty()) "BUY SIGNAL • $conf%" else "BUY SIGNAL"
+                    overlaySignal?.setTextColor(0xFF00E676.toInt())
+                }
+                "DOWN" -> {
+                    overlaySignal?.text = if (conf.isNotEmpty()) "SELL SIGNAL • $conf%" else "SELL SIGNAL"
+                    overlaySignal?.setTextColor(0xFFFF5252.toInt())
+                }
+                "WAIT" -> {
+                    overlaySignal?.text = "WAIT — NO TREND"
+                    overlaySignal?.setTextColor(0xFFFFB300.toInt())
+                }
+                else -> {
+                    overlaySignal?.text = text.take(50)
+                    overlaySignal?.setTextColor(0xFFFFFFFF.toInt())
+                }
+            }
         }
     }
 
-    private fun signalText(text: String): String = when {
-        text.contains("DOWN", true) && !text.contains("UP", true) -> "SELL SIGNAL"
-        text.contains("UP", true) && text.contains("signal", true) -> "BUY SIGNAL"
-        else -> text.take(60)
-    }
-
-    private fun signalColor(text: String): Int = when {
-        text.contains("DOWN", true) && !text.contains("UP", true) -> 0xFFFF5252.toInt()
-        text.contains("UP", true) && text.contains("signal", true) -> 0xFF00E676.toInt()
-        else -> 0xFFFFFFFF.toInt()
-    }
-
     private fun speakSignal(text: String) {
-        when {
-            text.contains("DOWN", true) && !text.contains("UP", true) ->
-                say(if (bangla) "সেল সিগন্যাল" else "Signal SELL")
-            text.contains("UP", true) ->
-                say(if (bangla) "বাই সিগন্যাল" else "Signal BUY")
-            else ->
-                say(if (bangla) "অপেক্ষা করুন" else "Wait")
+        when (extract(text, "signal")) {
+            "UP" -> say(if (bangla) "বাই সিগন্যাল" else "Signal BUY")
+            "DOWN" -> say(if (bangla) "সেল সিগন্যাল" else "Signal SELL")
+            "WAIT" -> say(if (bangla) "অপেক্ষা করুন, কোনো দিক নেই" else "Wait, no clear trend")
         }
     }
 
