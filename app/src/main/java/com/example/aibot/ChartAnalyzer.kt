@@ -10,7 +10,7 @@ import kotlin.math.abs
 object ChartAnalyzer {
 
     private var lastPrice: Double? = null
-    private var prevLines: List<Pair<Double, Int>> = emptyList()
+    private var prevLines: List<Double> = emptyList()
     private var lastRoundSec = -1
     private val history = ArrayDeque<Double>()
 
@@ -28,7 +28,6 @@ object ChartAnalyzer {
     }
 
     suspend fun analyze(full: Bitmap): String {
-        // ১. দামের এলাকা OCR — লাইন + position সহ
         val priceText = ocrText(crop(full, 0.62f, 0.22f, 1.00f, 0.85f))
         val lines = Regex("""(\d{1,6}\.\d{2,5})[^\d]*""").findAll(priceText)
             .mapNotNull { m ->
@@ -38,10 +37,8 @@ object ChartAnalyzer {
             .distinct()
             .toList()
 
-        // position ছাড়া value-only তাই আলাদা approach: আগের frame-এর সাথে মিলিয়ে বদলানো value টাই current price
         var current: Double? = null
         if (lines.isNotEmpty() && prevLines.isNotEmpty()) {
-            // যে value আগের frame-এ ছিল না সেটাই নীল tag
             val changed = lines.filter { v -> prevLines.none { abs(it - v) < 0.000001 } }
             if (changed.isNotEmpty()) {
                 val guess = lastPrice ?: changed.first()
@@ -64,7 +61,6 @@ object ChartAnalyzer {
         val move = if (list.size >= 2) ((list.last() - list[list.size - 2]) / list[list.size - 2]) * 100.0 else 0.0
         val overall = if (list.size >= 2) ((list.last() - list.first()) / list.first()) * 100.0 else 0.0
 
-        // ২. রাউন্ড countdown (বিভ্রান্তিকর লাইনের পাশের 00:XX)
         val rcText = ocrText(crop(full, 0.55f, 0.33f, 0.82f, 0.44f))
         var roundSec = -1
         Regex("""\d{1,2}:(\d{2})""").findAll(rcText).forEach { m ->
@@ -77,7 +73,6 @@ object ChartAnalyzer {
             lastRoundSec = roundSec
         }
 
-        // ৩. Server clock (উপরে বামে HH:MM:SS UTC+6)
         val clock = Regex("""(\d{1,2}:\d{2}:\d{2})""")
             .find(ocrText(crop(full, 0.12f, 0.15f, 0.42f, 0.21f)))
             ?.groupValues?.get(1) ?: ""
