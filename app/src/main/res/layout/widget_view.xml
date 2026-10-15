@@ -57,8 +57,8 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
-        android:text="BUY SIGNAL"
-        android:textColor="#00E676"
+        android:text="ANALYZING..."
+        android:textColor="#FFFFFF"
         android:textSize="16sp"
         android:textStyle="bold"
         android:visibility="gone"/>
