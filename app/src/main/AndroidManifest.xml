@@ -4,6 +4,7 @@
 
     <application
         android:label="AI Trading Bot"
+        android:icon="@drawable/dragon"
         android:theme="@style/Theme.Material3.DayNight.NoActionBar"
         android:allowBackup="false">
 
