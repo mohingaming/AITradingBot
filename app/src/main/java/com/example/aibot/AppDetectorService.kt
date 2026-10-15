@@ -48,7 +48,6 @@ class AppDetectorService : AccessibilityService() {
     private var ttsReady = false
     private var bangla = false
     private var wasVisible = false
-    private var lastSignal = ""
     private var seconds = 0
 
     override fun onServiceConnected() {
@@ -95,6 +94,7 @@ class AppDetectorService : AccessibilityService() {
         while (isActive) {
             val prefs = getSharedPreferences("bot", MODE_PRIVATE)
             val enabled = prefs.getBoolean("bot_on", true)
+            val apiKey = prefs.getString("api_key", "") ?: ""
 
             mainHandler.post {
                 if (!enabled) {
@@ -106,8 +106,18 @@ class AppDetectorService : AccessibilityService() {
                     overlayStatus?.setTextColor(
                         if (tradingBoxVisible) 0xFF00E676.toInt() else 0xFFFFB300.toInt())
                     overlayTimer?.text = String.format("%02d:%02d", seconds / 60, seconds % 60)
-                    overlaySignal?.visibility =
-                        if (tradingBoxVisible) View.VISIBLE else View.GONE
+
+                    when {
+                        !tradingBoxVisible ->
+                            overlaySignal?.visibility = View.GONE
+                        apiKey.isEmpty() -> {
+                            overlaySignal?.visibility = View.VISIBLE
+                            overlaySignal?.text = "API KEY DAO"
+                            overlaySignal?.setTextColor(0xFFFFB300.toInt())
+                        }
+                        else ->
+                            overlaySignal?.visibility = View.VISIBLE
+                    }
                 }
             }
 
@@ -182,19 +192,19 @@ class AppDetectorService : AccessibilityService() {
     }
 
     private fun signalColor(text: String): Int = when {
-        text.contains("DOWN", true) -> 0xFFFF5252.toInt()
+        text.contains("DOWN", true) && !text.contains("UP", true) -> 0xFFFF5252.toInt()
         text.contains("UP", true) && text.contains("signal", true) -> 0xFF00E676.toInt()
         else -> 0xFFFFFFFF.toInt()
     }
 
     private fun speakSignal(text: String) {
-        if (text == lastSignal) return
-        lastSignal = text
         when {
             text.contains("DOWN", true) && !text.contains("UP", true) ->
                 say(if (bangla) "সেল সিগন্যাল" else "Signal SELL")
             text.contains("UP", true) ->
                 say(if (bangla) "বাই সিগন্যাল" else "Signal BUY")
+            else ->
+                say(if (bangla) "অপেক্ষা করুন" else "Wait")
         }
     }
 
