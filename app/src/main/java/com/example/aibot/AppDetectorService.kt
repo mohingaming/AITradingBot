@@ -49,6 +49,7 @@ class AppDetectorService : AccessibilityService() {
     private var bangla = false
     private var wasVisible = false
     private var seconds = 0
+    private var last429Time = 0L
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -141,10 +142,19 @@ class AppDetectorService : AccessibilityService() {
             val prefs = getSharedPreferences("bot", MODE_PRIVATE)
             val enabled = prefs.getBoolean("bot_on", true)
             val apiKey = prefs.getString("api_key", "") ?: ""
+
+            val waitLeft = 90000L - (System.currentTimeMillis() - last429Time)
             if (enabled && tradingBoxVisible && apiKey.isNotEmpty()) {
-                takeShot(apiKey)
+                if (waitLeft > 0) {
+                    mainHandler.post {
+                        overlaySignal?.text = "RATE LIMIT — ${waitLeft / 1000}s wait"
+                        overlaySignal?.setTextColor(0xFFFFB300.toInt())
+                    }
+                } else {
+                    takeShot(apiKey)
+                }
             }
-            delay(10000)
+            delay(45000)
         }
     }
 
@@ -165,6 +175,7 @@ class AppDetectorService : AccessibilityService() {
                         try {
                             val data = ChartAnalyzer.analyze(sw)
                             val result = MercuryClient.analyze(apiKey, data)
+                            if (result.contains("429")) last429Time = System.currentTimeMillis()
                             showSignal(result)
                             speakSignal(result)
                         } catch (e: Exception) {
@@ -178,13 +189,13 @@ class AppDetectorService : AccessibilityService() {
             })
     }
 
-    // JSON থেকে signal আর confidence বের করে
     private fun extract(text: String, key: String): String {
         val m = Regex("""\"$key\"\s*:\s*\"?(UP|DOWN|WAIT|\d+)\"?""").find(text)
         return m?.groupValues?.get(1) ?: ""
     }
 
     private fun showSignal(text: String) {
+        if (text.contains("429")) last429Time = System.currentTimeMillis()
         val sig = extract(text, "signal")
         val conf = extract(text, "confidence")
         mainHandler.post {
