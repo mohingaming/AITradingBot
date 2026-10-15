@@ -49,7 +49,6 @@ class AppDetectorService : AccessibilityService() {
     private var bangla = false
     private var wasVisible = false
     private var seconds = 0
-    private var last429Time = 0L
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -95,7 +94,6 @@ class AppDetectorService : AccessibilityService() {
         while (isActive) {
             val prefs = getSharedPreferences("bot", MODE_PRIVATE)
             val enabled = prefs.getBoolean("bot_on", true)
-            val apiKey = prefs.getString("api_key", "") ?: ""
 
             mainHandler.post {
                 if (!enabled) {
@@ -107,18 +105,8 @@ class AppDetectorService : AccessibilityService() {
                     overlayStatus?.setTextColor(
                         if (tradingBoxVisible) 0xFF00E676.toInt() else 0xFFFFB300.toInt())
                     overlayTimer?.text = String.format("%02d:%02d", seconds / 60, seconds % 60)
-
-                    when {
-                        !tradingBoxVisible ->
-                            overlaySignal?.visibility = View.GONE
-                        apiKey.isEmpty() -> {
-                            overlaySignal?.visibility = View.VISIBLE
-                            overlaySignal?.text = "API KEY DAO"
-                            overlaySignal?.setTextColor(0xFFFFB300.toInt())
-                        }
-                        else ->
-                            overlaySignal?.visibility = View.VISIBLE
-                    }
+                    overlaySignal?.visibility =
+                        if (tradingBoxVisible) View.VISIBLE else View.GONE
                 }
             }
 
@@ -141,24 +129,15 @@ class AppDetectorService : AccessibilityService() {
         while (isActive) {
             val prefs = getSharedPreferences("bot", MODE_PRIVATE)
             val enabled = prefs.getBoolean("bot_on", true)
-            val apiKey = prefs.getString("api_key", "") ?: ""
-
-            val waitLeft = 90000L - (System.currentTimeMillis() - last429Time)
-            if (enabled && tradingBoxVisible && apiKey.isNotEmpty()) {
-                if (waitLeft > 0) {
-                    mainHandler.post {
-                        overlaySignal?.text = "RATE LIMIT — ${waitLeft / 1000}s wait"
-                        overlaySignal?.setTextColor(0xFFFFB300.toInt())
-                    }
-                } else {
-                    takeShot(apiKey)
-                }
+            if (enabled && tradingBoxVisible) {
+                takeShot()
             }
-            delay(45000)
+            delay(20000)
         }
     }
 
-    private fun takeShot(apiKey: String) {
+    // LOCAL BRAIN — API লাগে না, rate limit নেই
+    private fun takeShot() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             showSignal("Android 11+ lagbe")
             return
@@ -174,8 +153,19 @@ class AppDetectorService : AccessibilityService() {
                     scope.launch {
                         try {
                             val data = ChartAnalyzer.analyze(sw)
-                            val result = MercuryClient.analyze(apiKey, data)
-                            if (result.contains("429")) last429Time = System.currentTimeMillis()
+                            val move = Regex("""Latest move \(last scan\): (-?\d+\.\d+)""")
+                                .find(data)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
+                            val overall = Regex("""Overall trend: (-?\d+\.\d+)""")
+                                .find(data)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
+                            val score = move * 0.7 + overall * 0.3
+                            val result = when {
+                                score > 0.002 ->
+                                    """{"signal":"UP","confidence":85,"reason":"rising"}"""
+                                score < -0.002 ->
+                                    """{"signal":"DOWN","confidence":85,"reason":"falling"}"""
+                                else ->
+                                    """{"signal":"WAIT","confidence":50,"reason":"flat"}"""
+                            }
                             showSignal(result)
                             speakSignal(result)
                         } catch (e: Exception) {
@@ -195,7 +185,6 @@ class AppDetectorService : AccessibilityService() {
     }
 
     private fun showSignal(text: String) {
-        if (text.contains("429")) last429Time = System.currentTimeMillis()
         val sig = extract(text, "signal")
         val conf = extract(text, "confidence")
         mainHandler.post {
